@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  app_blue:
+    image: ${BLUE_IMAGE}
+    container_name: app_blue
+    environment:
+      - APP_POOL=blue
+      - RELEASE_ID=${RELEASE_ID_BLUE}
+      - PORT=${PORT}
+    ports:
+      - "8081:3000"
+    networks:
+      - app_network
+
+  app_green:
+    image: ${GREEN_IMAGE}
+    container_name: app_green
+    environment:
+      - APP_POOL=green
+      - RELEASE_ID=${RELEASE_ID_GREEN}
+      - PORT=${PORT}
+    ports:
+      - "8082:3000"
+    networks:
+      - app_network
+      
+  nginx:
+    image: nginx:alpine
+    container_name: nginx
+    depends_on:
+      - app_blue
+      - app_green
+    ports:
+      - "8080:80"
+    environment:
+      - ACTIVE_POOL=${ACTIVE_POOL}
+    volumes:
+      - ./nginx.conf.template:/etc/nginx/templates/nginx.conf.template:ro
+    command: /bin/sh -c "envsubst '$$ACTIVE_POOL' < /etc/nginx/templates/nginx.conf.template > /etc/nginx/nginx.conf && nginx -g 'daemon off;'"
+    networks:
+      - app_network
+
+networks:
+  app_network:
+    driver: bridge

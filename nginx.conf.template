@@ -1,0 +1,72 @@
+events {
+    worker_connections 1024;
+}
+
+http {
+    # Primary and backup upstreams
+    upstream primary_backend {
+        server app_blue:3000;
+    }
+
+    upstream backup_backend {
+        server app_green:3000;
+    }
+
+    # Active pool selection
+    map $ACTIVE_POOL $active_backend {
+        blue   primary_backend;
+        green  backup_backend;
+        default primary_backend;
+    }
+
+    # Determine backup based on active
+    map $ACTIVE_POOL $backup_backend {
+        blue   backup_backend;
+        green  primary_backend;
+        default backup_backend;
+    }
+
+    server {
+        listen 80;
+        
+        # Main endpoint with explicit retry logic
+        location / {
+            # Try the active backend first
+            proxy_pass http://$active_backend;
+            
+            # If active backend returns 5xx, retry on backup
+            proxy_intercept_errors on;
+            error_page 500 502 503 504 = @backup;
+            
+            # Forward headers
+            proxy_pass_header X-App-Pool;
+            proxy_pass_header X-Release-Id;
+            
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            
+            proxy_connect_timeout 2s;
+            proxy_send_timeout 5s;
+            proxy_read_timeout 5s;
+        }
+
+        # Backup location
+        location @backup {
+            proxy_pass http://$backup_backend;
+            
+            proxy_pass_header X-App-Pool;
+            proxy_pass_header X-Release-Id;
+            
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            
+            proxy_connect_timeout 2s;
+            proxy_send_timeout 5s;
+            proxy_read_timeout 5s;
+        }
+    }
+}
